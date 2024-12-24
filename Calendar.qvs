@@ -1,0 +1,152 @@
+TRACE ===== CALENDAR =====;
+
+SET TimeFormat			= 'hh:mm:ss';
+SET DateFormat			= 'DD/MM/YYYY';
+SET TimestampFormat		= 'DD/MM/YYYY hh:mm:ss[.fff]';
+SET MonthNames			= 'Jan;Fev;Mar;Abr;Mai;Jun;Jul;Ago;Set;Out;Nov;Dez';
+SET LongMonthNames		= 'Janeiro;Fevereiro;Março;Abril;Maio;Junho;Julho;Agosto;Setembro;Outubro;Novembro;Dezembro';
+SET DayNames			= 'seg;ter;qua;qui;sex;sáb;dom';
+SET LongDayNames		= 'segunda-feira;terça-feira;quarta-feira;quinta-feira;sexta-feira;sábado;domingo';
+SET ReferenceDay		= 0;						//The setting defines which day in January to set as reference day to define week 1
+SET FirstMonthOfYear	= 1;						// This defines when your fiscal year should start (month between 1 and 12)
+LET FiscalOffset 		= $(FirstMonthOfYear)-12-1; // eg: if the first fiscal month is 10, we want to define an offset of -3
+SET FirstWeekDay		= 6; 						// 0 = Monday 6 = Sunday
+SET BrokenWeeks			= 1; 						// This setting defines if weeks are broken or not. 0 = not broken. 1 = broken (Week 1 always startes on Jan 1st)
+
+Let vDateField	= 'Data';
+Let vType 		= 'MinMax';
+Let vTable		= 'Fato';
+Let vToday		= Today();
+
+If '$(vType)' = 'MinMax' Then
+
+    MinMax:
+    LOAD Distinct
+        Min(Floor($(vDateField))) 		as MinData, 
+        Max(Floor($(vDateField))) 		as MaxData
+    Resident [$(vTable)];
+
+    LET vMinDate = Peek('MinData');
+    LET vMaxDate = Peek('MaxData');
+
+    DROP TABLE MinMax;
+    
+ElseIf '$(vType)' = 'Variavel' Then
+
+    Let vMinDate = Floor('$(vDataInicial)');
+    Let vMaxDate = Floor('$(vDataFinal)');
+    
+End If
+
+TempCalendar:
+LOAD 
+    $(vMinDate) + RowNo() - 1 			as DateNum
+AutoGenerate 
+    $(vMaxDate) - $(vMinDate) + 1; 
+     
+Calendar:  
+LOAD   
+	*,
+    $(vToday) - Date 									as DayOffset,
+    (Year($(vToday)) * 12 + Month($(vToday)))
+    -
+    (Year(Date) * 12 + Month(Date)) 					as MonthOffset,  
+    (Year($(vToday)) * 4 + Ceil(Month($(vToday)) / 3))
+    -
+    (Year(Date) * 4 + Ceil(Month(Date) / 3)) 			as QuarterOffset,    
+    Year($(vToday)) - Year(Date)						as YearOffset
+    ;
+LOAD  
+
+	DateNum													as $(vDateField),
+    Date(DateNum)											as Date,
+    Year(DateNum)											as Year,
+    YearName(DateNum, 0, $(FirstMonthOfYear))										as YearName,
+    YearStart(DateNum)										as YearStart,
+    Month(DateNum) 											as Month,
+    Dual(Date(DateNum,'YYYY-MMM'),MonthStart(DateNum))		as YearMonth,
+	MonthStart(DateNum)										as MonthStart,
+    Day(DateNum) 											as Day,
+    Weekday(DateNum) 										as Weekday,       
+    Week(DateNum) 											as Week,        
+    WeekStart(DateNum) 										as Weekstart,
+    
+    Dual(
+    	Year(DateNum) & '-W' & Week(DateNum),
+        WeekStart(DateNum)
+    )														as YearWeek,
+    
+    'Q' & Ceil(Month(DateNum) / 3) 							as Quarter,
+    
+    QuarterStart(DateNum)									as QuarterStart,
+    
+    Dual(
+    	Year(DateNum) & '-Q' & Ceil(Month(DateNum)/3),
+        QuarterStart(DateNum)
+    )														as YearQuarter,
+
+   	If(DateNum > $(vToday)-1 and DateNum <= $(vToday),1,0) 							AS CurrentDay,         
+	If(DateNum > $(vToday)-30 and DateNum <= $(vToday),1,0) 						AS Current30Days, 			
+	If(DateNum > $(vToday)-60 and DateNum <= $(vToday),1,0) 						AS Current60Days, 			
+	If(DateNum > $(vToday)-90 and DateNum <= $(vToday),1,0) 						AS Current90Days, 			
+	If(DateNum > $(vToday)-180 and DateNum <= $(vToday),1,0) 						AS Current180Days, 		
+	If(DateNum > $(vToday)-365 and DateNum <= $(vToday),1,0) 						AS Current365Days, 		
+// 	If(DateNum > AddMonths($(vToday),-1) and DateNum <= $(vToday),1,0) 				AS Current1Month, 		
+// 	If(DateNum > AddMonths($(vToday),-3) and DateNum <= $(vToday),1,0) 				AS Current3Months, 		
+// 	If(DateNum > AddMonths($(vToday),-6) and DateNum <= $(vToday),1,0) 				AS Current6Months, 		
+// 	If(DateNum > AddMonths($(vToday),-12) and DateNum <= $(vToday),1,0) 			AS Current12Months,
+//  -InWeek(DateNum, $(vToday), 0)													as CurrentWeek,        
+//  -InMonth(DateNum, $(vToday), 0)													as CurrentMonth,
+//  -InQuarter(DateNum, $(vToday), 0)												as CurrentQuarter,     
+// 	-InYear(DateNum, $(vToday), 0)													as CurrentYear,
+// 	-InYear(DateNum, $(vToday), 0, $(FirstMonthOfYear))												as CurrentFiscalYear,  
+	-InWeekToDate(DateNum, $(vToday), 0) 											AS CurrentWTD,			
+    -InMonthToDate(DateNum, $(vToday), 0)											as CurrentMTD,
+    -InQuarterToDate(DateNum, $(vToday), 0)											as CurrentQTD,          
+    -InYearToDate(DateNum, $(vToday), 0)											as CurrentYTD,   
+    -InYearToDate(DateNum, $(vToday), 0, $(FirstMonthOfYear))											as CurrentFYTD,
+   
+	If(DateNum > $(vToday)-2 and DateNum <= $(vToday)-1,1,0) 						AS PreviousDay, 
+	If(DateNum > $(vToday)-60 and DateNum <= $(vToday)-30,1,0) 						AS Previous30Days, 		
+	If(DateNum > $(vToday)-120 and DateNum <= $(vToday)-60,1,0) 					AS Previous60Days, 		
+	If(DateNum > $(vToday)-180 and DateNum <= $(vToday)-90,1,0) 					AS Previous90Days, 		
+	If(DateNum > $(vToday)-360 and DateNum <= $(vToday)-180,1,0) 					AS Previous180Days, 	
+	If(DateNum > $(vToday)-730 and DateNum <= $(vToday)-365,1,0) 					AS Previous365Days, 	
+// 	If(DateNum > AddMonths($(vToday),-2) and DateNum <= AddMonths($(vToday),-1),1,0) 	AS Previous1Month, 	
+// 	If(DateNum > AddMonths($(vToday),-6) and DateNum <= AddMonths($(vToday),-3),1,0) 	AS Previous3Months, 	
+// 	If(DateNum > AddMonths($(vToday),-12) and DateNum <= AddMonths($(vToday),-6),1,0) AS Previous6Months, 	
+// 	If(DateNum > AddMonths($(vToday),-24) and DateNum <= AddMonths($(vToday),-12),1,0) AS Previous12Months, 
+//  -InWeek(DateNum, $(vToday), -1)													as PreviousWeek,        
+//  -InMonth(DateNum, $(vToday), -1)												as PreviousMonth,
+//  -InQuarter(DateNum, $(vToday), -1)												as PreviousQuarter,     
+// 	-InYear(DateNum, $(vToday), -1)													as PreviousYear,
+// 	-InYear(DateNum, $(vToday), -1, $(FirstMonthOfYear))												as PreviousFiscalYear,
+	-InWeekToDate(DateNum, $(vToday), -1) 											AS PreviousWTD,
+    -InMonthToDate(DateNum, $(vToday), -1)											as PreviousMTD,
+    -InQuarterToDate(DateNum, $(vToday), -1)										as PreviousQTD,          
+    -InYearToDate(DateNum, $(vToday), -1)											as PreviousYTD,         
+    -InYearToDate(DateNum, $(vToday), -1, $(FirstMonthOfYear))										as PreviousFYTD,            
+
+    If(DateNum > AddYears($(vToday)-1,-1) and DateNum <= AddYears($(vToday),-1),1,0) 	AS PY_Day, 	
+    If(DateNum > AddYears($(vToday)-30,-1) and DateNum <= AddYears($(vToday),-1),1,0) 	AS PY_30Days, 	
+    If(DateNum > AddYears($(vToday)-60,-1) and DateNum <= AddYears($(vToday),-1),1,0) 	AS PY_60Days, 	
+    If(DateNum > AddYears($(vToday)-90,-1) and DateNum <= AddYears($(vToday),-1),1,0) 	AS PY_90Days, 	
+    If(DateNum > AddYears($(vToday)-180,-1) and DateNum <= AddYears($(vToday),-1),1,0) 	AS PY_180Days, 
+    If(DateNum > AddYears($(vToday)-365,-1) and DateNum <= AddYears($(vToday),-1),1,0) 	AS PY_365Days, 
+// 	If(DateNum > AddYears(AddMonths($(vToday),-2),-1) and DateNum <= AddYears(AddMonths($(vToday),-1),-1),1,0) 	AS PY_1Month, 	
+// 	If(DateNum > AddYears(AddMonths($(vToday),-6),-1) and DateNum <= AddYears(AddMonths($(vToday),-3),-1),1,0) 	AS PY_3Months, 	
+// 	If(DateNum > AddYears(AddMonths($(vToday),-12),-1) and DateNum <= AddYears(AddMonths($(vToday),-6),-1),1,0) 	AS PY_6Months, 	
+// 	If(DateNum > AddYears(AddMonths($(vToday),-24),-1) and DateNum <= AddYears(AddMonths($(vToday),-12),-1),1,0) 	AS PY_12Months, 	        
+//  -InWeek(DateNum, AddYears($(vToday),-1), -1)										as PY_Week,        
+//  -InMonth(DateNum, AddYears($(vToday),-1), -1)										as PY_Month,
+//  -InQuarter(DateNum, AddYears($(vToday),-1), -1)										as PY_Quarter,     
+// 	-InYear(DateNum, AddYears($(vToday),-1), -1)										as PY_Year,
+// 	-InYear(DateNum, AddYears($(vToday),-1), -1, $(FirstMonthOfYear))										as PY_FiscalYear, 
+	-InWeekToDate(DateNum, AddYears($(vToday),-1), -1) 									AS PY_WTD,
+    -InMonthToDate(DateNum, AddYears($(vToday),-1), -1)									as PY_MTD,
+    -InQuarterToDate(DateNum, AddYears($(vToday),-1), -1)								as PY_QTD,          
+    -InYearToDate(DateNum, AddYears($(vToday),-1), -1)									as PY_YTD,   
+    -InYearToDate(DateNum, AddYears($(vToday),-1), -1, $(FirstMonthOfYear))								as PY_FYTD 
+    
+Resident TempCalendar;   
+Drop Table TempCalendar;  
